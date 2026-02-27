@@ -10,7 +10,9 @@
     "lint": "echo 'lint: add eslint config'"
   },
   "dependencies": {
-    "fastify": "^5.2.1"
+    "fastify": "^5.2.1",
+    "fastify-plugin": "^5.0.1",
+    "@aar/sdk": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.19.3",
