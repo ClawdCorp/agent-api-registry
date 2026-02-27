@@ -39,7 +39,7 @@ const signatureValidationPlugin: FastifyPluginAsync<SignaturePluginOptions> = as
     excludePaths = ['/health', '/v1/providers']
   } = opts
 
-  fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.addHook('preValidation', async (request: FastifyRequest, reply: FastifyReply) => {
     // Enforce signatures only on broker routes
     if (!request.url.startsWith('/v1/broker/')) {
       return
