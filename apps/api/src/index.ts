@@ -82,6 +82,11 @@ app.post('/v1/workspaces/:workspaceId/invites', {
     return reply.code(400).send({ error: 'bad_request', message: 'email and valid role required' })
   }
 
+  // prevent admin -> owner escalation via invite creation
+  if (role === 'owner' && req.actorRole !== 'owner') {
+    return reply.code(403).send({ error: 'forbidden', message: 'only owners can invite owners' })
+  }
+
   const invite = rbacStore.createInvite(workspaceId, body.email, role, req.actorUserId!)
   return reply.code(201).send({ invite })
 })
