@@ -3,6 +3,7 @@ import signaturePlugin from './plugins/signature.js'
 import rbacPlugin from './plugins/rbac.js'
 import { rbacStore } from './rbac/store.js'
 import type { Role } from './rbac/types.js'
+import { validateEgressStrict, DEFAULT_ALLOWLIST } from '@aar/sdk'
 
 const app = Fastify({ logger: true })
 
@@ -111,17 +112,43 @@ app.post('/v1/invites/:token/accept', async (req, reply) => {
   }
 })
 
-// broker endpoint (signature-validated)
+// broker endpoint (signature + egress allowlist validated)
 app.post('/v1/broker/:provider/*', {
   preHandler: [async (req) => app.requireRole('dev')(req)]
-}, async (req) => {
+}, async (req, reply) => {
   const { provider } = req.params as { provider: string }
+  const body = (req.body ?? {}) as { targetUrl?: string }
+
+  if (!body.targetUrl) {
+    return reply.code(400).send({ error: 'bad_request', message: 'targetUrl is required' })
+  }
+
+  // cc-152: enforce provider egress allowlist
+  const providerAllowlist = DEFAULT_ALLOWLIST.filter((item) => item.provider === provider)
+  if (providerAllowlist.length === 0) {
+    req.log.warn({ provider, workspaceId: req.workspaceId }, 'egress blocked: unknown provider')
+    return reply.code(403).send({ error: 'egress_blocked', reason: 'unknown_provider' })
+  }
+
+  const egress = validateEgressStrict(body.targetUrl, providerAllowlist)
+  if (!egress.allowed) {
+    req.log.warn({
+      provider,
+      workspaceId: req.workspaceId,
+      targetUrl: body.targetUrl,
+      reason: egress.reason
+    }, 'egress blocked: host not in allowlist or bypass attempt')
+    return reply.code(403).send({ error: 'egress_blocked', reason: egress.reason })
+  }
+
   return {
     ok: true,
     provider,
     workspaceId: req.workspaceId,
     actorRole: req.actorRole,
-    signatureValid: true
+    signatureValid: true,
+    egressAllowed: true,
+    matchedProvider: egress.matchedProvider
   }
 })
 

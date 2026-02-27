@@ -62,3 +62,12 @@ export {
   type SignedRequest,
   type VerificationResult
 } from './signing'
+
+export {
+  DEFAULT_ALLOWLIST,
+  validateEgress,
+  validateEgressStrict,
+  createAllowedFetch,
+  EgressBlockedError,
+  type AllowedEndpoint
+} from './egress'
