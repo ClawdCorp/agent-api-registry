@@ -6,6 +6,7 @@ import { rbacStore } from '../rbac/store.js'
 declare module 'fastify' {
   interface FastifyRequest {
     actorUserId?: string
+    actorEmail?: string
     workspaceId?: string
     actorRole?: Role
   }
@@ -47,8 +48,8 @@ const rbacPlugin: FastifyPluginAsync = async (app) => {
     const workspaceId = (request.headers['x-workspace-id'] as string | undefined) ?? undefined
     const actorUserId = (request.headers['x-user-id'] as string | undefined) ?? undefined
 
-    request.workspaceId = workspaceId
-    request.actorUserId = actorUserId
+    request.workspaceId = request.workspaceId ?? workspaceId
+    request.actorUserId = request.actorUserId ?? actorUserId
   })
 }
 
