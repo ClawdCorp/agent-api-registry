@@ -6,3 +6,6 @@ dist
 .next
 coverage
 .DS_Store
+*.db
+*.db-wal
+*.db-shm
