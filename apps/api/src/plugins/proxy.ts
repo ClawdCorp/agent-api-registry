@@ -43,16 +43,6 @@ export default fp(async function proxyPlugin(app) {
       })
     }
 
-    // per-account RPM check
-    const rpm = checkAccountRpm(req.accountId)
-    if (!rpm.allowed) {
-      return reply.code(429).send({
-        error: 'rate_limited',
-        message: 'account RPM limit exceeded',
-        rpm: { current: rpm.current, limit: rpm.limit }
-      })
-    }
-
     // get provider key (BYOK)
     const db = getDb()
     const keyRow = db.prepare(
@@ -67,6 +57,17 @@ export default fp(async function proxyPlugin(app) {
     }
 
     const providerApiKey = decrypt(keyRow.encrypted_key, keyRow.iv)
+
+    // per-account RPM check — placed after all validation so early
+    // failures (missing key, bad provider, etc.) don't consume RPM
+    const rpm = checkAccountRpm(req.accountId)
+    if (!rpm.allowed) {
+      return reply.code(429).send({
+        error: 'rate_limited',
+        message: 'account RPM limit exceeded',
+        rpm: { current: rpm.current, limit: rpm.limit }
+      })
+    }
 
     // delegate to ProxyEngine
     try {

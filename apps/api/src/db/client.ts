@@ -28,11 +28,22 @@ export function getDb(): Database.Database {
       `ALTER TABLE accounts ADD COLUMN verification_expires TEXT`,
       `ALTER TABLE accounts ADD COLUMN recovery_token TEXT`,
       `ALTER TABLE accounts ADD COLUMN recovery_expires TEXT`,
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_tx_reference ON credit_transactions(reference_type, reference_id) WHERE reference_type IS NOT NULL AND reference_id IS NOT NULL`,
     ]
     for (const m of migrations) {
       try { db.exec(m) } catch { /* column already exists */ }
     }
+
+    // Dedupe any existing duplicate (reference_type, reference_id) rows before
+    // creating the unique index — keeps the earliest row per pair.
+    db.exec(`
+      DELETE FROM credit_transactions
+      WHERE rowid NOT IN (
+        SELECT MIN(rowid) FROM credit_transactions
+        WHERE reference_type IS NOT NULL AND reference_id IS NOT NULL
+        GROUP BY reference_type, reference_id
+      ) AND reference_type IS NOT NULL AND reference_id IS NOT NULL
+    `)
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_tx_reference ON credit_transactions(reference_type, reference_id) WHERE reference_type IS NOT NULL AND reference_id IS NOT NULL`)
 
     // Normalize legacy invalid rpm_limit values (#74)
     db.exec(`UPDATE platform_provider_keys SET rpm_limit = 60 WHERE rpm_limit <= 0 OR rpm_limit IS NULL`)
