@@ -2,8 +2,10 @@ import fp from 'fastify-plugin'
 import { getAdapter } from '../adapters/index.js'
 import { getDb } from '../db/client.js'
 import { decrypt } from '../core/crypto.js'
-import { checkBudget, checkAndAlertThresholds } from '../core/budget.js'
-import { logSpendEvent } from '../core/spend.js'
+import { checkBudget } from '../core/budget.js'
+import { ProxyEngine, ProxyEngineError } from '../core/proxy-engine.js'
+
+const proxyEngine = new ProxyEngine()
 
 export default fp(async function proxyPlugin(app) {
   // wildcard route: ALL /:provider/*
@@ -11,7 +13,7 @@ export default fp(async function proxyPlugin(app) {
     const { provider } = req.params as { provider: string; '*': string }
     const restPath = (req.params as { '*': string })['*']
 
-    // resolve adapter
+    // resolve adapter (quick check before doing auth/budget work)
     const adapter = getAdapter(provider)
     if (!adapter) {
       return reply.code(404).send({
@@ -24,19 +26,6 @@ export default fp(async function proxyPlugin(app) {
     // auth required for proxy
     if (!req.accountId) {
       return reply.code(401).send({ error: 'unauthorized', message: 'API key required for proxy calls' })
-    }
-
-    // check blocked patterns
-    if (adapter.blockedPatterns) {
-      const reqLine = `${req.method} /${restPath}`
-      for (const pattern of adapter.blockedPatterns) {
-        if (pattern.test(reqLine)) {
-          return reply.code(403).send({
-            error: 'blocked_endpoint',
-            message: `this endpoint is blocked for safety: ${req.method} /${restPath}`
-          })
-        }
-      }
     }
 
     // budget check (pre-call)
@@ -53,7 +42,7 @@ export default fp(async function proxyPlugin(app) {
       })
     }
 
-    // get provider key
+    // get provider key (BYOK)
     const db = getDb()
     const keyRow = db.prepare(
       'SELECT encrypted_key, iv FROM provider_keys WHERE account_id = ? AND provider = ?'
@@ -68,91 +57,40 @@ export default fp(async function proxyPlugin(app) {
 
     const providerApiKey = decrypt(keyRow.encrypted_key, keyRow.iv)
 
-    // build outbound request
-    const targetUrl = `${adapter.baseUrl}/${restPath}`
-    const outboundHeaders = adapter.buildOutboundHeaders(
-      req.headers as Record<string, string | string[] | undefined>,
-      providerApiKey
-    )
-
-    // ensure content-type is passed
-    if (req.headers['content-type'] && !outboundHeaders['content-type']) {
-      outboundHeaders['content-type'] = req.headers['content-type'] as string
-    }
-
-    const startMs = Date.now()
-    let responseStatus = 0
-    let responseBody: unknown = null
-
+    // delegate to ProxyEngine
     try {
-      const fetchOptions: RequestInit = {
-        method: req.method,
-        headers: outboundHeaders,
+      const result = await proxyEngine.execute(
+        {
+          provider,
+          method: req.method,
+          path: restPath,
+          headers: req.headers as Record<string, string | string[] | undefined>,
+          body: req.body,
+        },
+        { type: 'provided', key: providerApiKey },
+        req.accountId,
+      )
+
+      // map ProxyResponse back to Fastify reply
+      reply.status(result.status)
+      for (const [key, value] of Object.entries(result.headers)) {
+        reply.header(key, value)
       }
-
-      // pass body for non-GET requests
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
-        const rawBody = req.body
-        fetchOptions.body = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody)
-      }
-
-      const providerRes = await fetch(targetUrl, fetchOptions)
-      const latencyMs = Date.now() - startMs
-      responseStatus = providerRes.status
-
-      // read response body
-      const contentType = providerRes.headers.get('content-type') ?? ''
-      let bodyText: string
-      if (contentType.includes('application/json')) {
-        responseBody = await providerRes.json()
-        bodyText = JSON.stringify(responseBody)
-      } else {
-        bodyText = await providerRes.text()
-        responseBody = bodyText
-      }
-
-      // meter the call (async-ish but in same request for simplicity)
-      const usage = adapter.extractUsage(req.method, `/${restPath}`, req.body, responseStatus, responseBody)
-      logSpendEvent({
-        accountId: req.accountId,
-        provider,
-        method: req.method,
-        endpoint: `/${restPath}`,
-        costCents: usage?.costCents ?? 0,
-        responseStatus,
-        latencyMs
-      })
-
-      // check threshold alerts
-      checkAndAlertThresholds(req.accountId)
-
-      // pass through response
-      reply.status(providerRes.status)
-      // forward safe response headers
-      for (const [key, value] of providerRes.headers.entries()) {
-        if (!['transfer-encoding', 'connection', 'content-encoding', 'content-length'].includes(key.toLowerCase())) {
-          reply.header(key, value)
-        }
-      }
-
-      return reply.send(contentType.includes('application/json') ? responseBody : bodyText)
+      return reply.send(
+        result.contentType.includes('application/json') ? result.body : result.body
+      )
     } catch (err) {
-      const latencyMs = Date.now() - startMs
-      // log failed call
-      logSpendEvent({
-        accountId: req.accountId,
-        provider,
-        method: req.method,
-        endpoint: `/${restPath}`,
-        costCents: 0,
-        responseStatus: 502,
-        latencyMs
-      })
-
+      if (err instanceof ProxyEngineError) {
+        return reply.code(err.statusCode).send({
+          error: err.code,
+          message: err.message,
+        })
+      }
+      // unexpected error
       const message = err instanceof Error ? err.message : 'unknown error'
-      return reply.code(502).send({
-        error: 'proxy_error',
-        message: `failed to reach ${provider}: ${message}`
+      return reply.code(500).send({
+        error: 'internal_error',
+        message,
       })
     }
   })
