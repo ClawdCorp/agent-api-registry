@@ -2,7 +2,7 @@ import { getAdapter } from '../adapters/index.js'
 import type { UsageInfo } from '../adapters/types.js'
 import { logSpendEvent } from './spend.js'
 import { checkAndAlertThresholds } from './budget.js'
-import { selectPlatformKey, recordKeyUsage, PlatformKeyError } from './platform-keys.js'
+import { selectPlatformKey, PlatformKeyError } from './platform-keys.js'
 
 // ── Public interfaces ──────────────────────────────────────────────
 
@@ -154,12 +154,7 @@ export class ProxyEngine {
         latencyMs,
       })
 
-      // 8. Record platform key usage
-      if (platformKeyId) {
-        recordKeyUsage(platformKeyId)
-      }
-
-      // 9. Check budget alerts
+      // 8. Check budget alerts
       checkAndAlertThresholds(accountId)
 
       // 10. Build safe response headers

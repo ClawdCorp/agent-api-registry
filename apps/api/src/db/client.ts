@@ -16,6 +16,18 @@ export function getDb(): Database.Database {
 
     const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8')
     db.exec(schema)
+
+    // Idempotent migrations for existing databases
+    const migrations = [
+      `ALTER TABLE accounts ADD COLUMN role TEXT NOT NULL DEFAULT 'user'`,
+      `ALTER TABLE playbook_executions ADD COLUMN settlement_status TEXT NOT NULL DEFAULT 'pending'`,
+    ]
+    for (const m of migrations) {
+      try { db.exec(m) } catch { /* column already exists */ }
+    }
+
+    // Backfill admin role for existing admin account
+    db.exec(`UPDATE accounts SET role = 'admin' WHERE email = 'admin@aar.dev' AND role = 'user'`)
   }
   return db
 }

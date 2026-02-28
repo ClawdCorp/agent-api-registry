@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   name TEXT,
   monthly_budget_cents INTEGER NOT NULL DEFAULT 0,
   credit_balance_cents INTEGER NOT NULL DEFAULT 0,
+  role TEXT NOT NULL DEFAULT 'user',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -130,6 +131,7 @@ CREATE TABLE IF NOT EXISTS playbook_executions (
   steps_completed INTEGER NOT NULL DEFAULT 0,
   steps_total INTEGER NOT NULL,
   error TEXT,
+  settlement_status TEXT NOT NULL DEFAULT 'pending',
   started_at TEXT,
   completed_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))

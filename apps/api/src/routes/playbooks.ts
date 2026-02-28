@@ -300,7 +300,7 @@ export default fp(async function playbookRoutes(app) {
     }
 
     const { id } = req.params as { id: string }
-    const body = req.body as { version?: string }
+    const body = (req.body ?? {}) as { version?: string }
     const db = getDb()
 
     // Find the playbook
@@ -425,7 +425,7 @@ export default fp(async function playbookRoutes(app) {
     }
 
     const { id } = req.params as { id: string }
-    const body = req.body as { input?: Record<string, unknown> }
+    const body = (req.body ?? {}) as { input?: Record<string, unknown> }
     const db = getDb()
 
     // Verify playbook is installed

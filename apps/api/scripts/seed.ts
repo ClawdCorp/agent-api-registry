@@ -92,7 +92,7 @@ const adminEmail = 'admin@aar.dev'
 const existingAdmin = db.prepare('SELECT id FROM accounts WHERE email = ?').get(adminEmail) as { id: string } | undefined
 if (!existingAdmin) {
   const adminId = `acct_${randomUUID().replace(/-/g, '').slice(0, 16)}`
-  db.prepare('INSERT INTO accounts (id, email, name) VALUES (?, ?, ?)').run(adminId, adminEmail, 'Admin')
+  db.prepare('INSERT INTO accounts (id, email, name, role) VALUES (?, ?, ?, ?)').run(adminId, adminEmail, 'Admin', 'admin')
   const adminApiKey = `aar_sk_${randomBytes(24).toString('hex')}`
   const adminKeyHash = createHash('sha256').update(adminApiKey).digest('hex')
   const adminKeyId = `key_${randomUUID().replace(/-/g, '').slice(0, 16)}`
@@ -102,7 +102,9 @@ if (!existingAdmin) {
   console.log(`    Email    : ${adminEmail}`)
   console.log(`    API Key  : ${adminApiKey}`)
 } else {
-  console.log(`\n  Admin Account: already exists`)
+  // Ensure admin role is set on existing admin account
+  db.prepare("UPDATE accounts SET role = 'admin' WHERE email = ? AND role = 'user'").run(adminEmail)
+  console.log(`\n  Admin Account: already exists (ensured admin role)`)
 }
 
 // seed credits for demo account ($100 = 10000 cents)

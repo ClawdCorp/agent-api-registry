@@ -68,6 +68,9 @@ export function selectPlatformKey(provider: string): { keyId: string; apiKey: st
     )
   }
 
+  // Pre-increment counter to prevent concurrent over-assignment
+  bestCounter.count++
+
   const apiKey = decrypt(bestRow!.encrypted_key, bestRow!.iv)
   return { keyId: bestRow!.id, apiKey }
 }

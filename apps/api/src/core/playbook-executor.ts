@@ -5,6 +5,7 @@ import type { ProxyResponse } from './proxy-engine.js'
 import { resolveTemplate, extractOutput } from './playbook-schema.js'
 import type { PlaybookManifest, PlaybookStep } from './playbook-schema.js'
 import { reserveCredits, consumeCredits, releaseReservation, getBalance } from './credits.js'
+import type { CreditTransaction } from './credits.js'
 
 // ── Public interfaces ──────────────────────────────────────────────
 
@@ -36,6 +37,26 @@ interface ExecutionContext {
   steps: Record<string, Record<string, unknown>>
 }
 
+// ── Input defaults ────────────────────────────────────────────────
+
+function applyInputDefaults(
+  input: Record<string, unknown>,
+  inputSchema: Record<string, unknown>,
+): Record<string, unknown> {
+  const properties = inputSchema.properties as
+    | Record<string, { default?: unknown }>
+    | undefined
+  if (!properties) return input
+
+  const result = { ...input }
+  for (const [key, prop] of Object.entries(properties)) {
+    if (result[key] === undefined && prop?.default !== undefined) {
+      result[key] = prop.default
+    }
+  }
+  return result
+}
+
 // ── Executor ───────────────────────────────────────────────────────
 
 export class PlaybookExecutor {
@@ -50,20 +71,25 @@ export class PlaybookExecutor {
     const startedAt = new Date().toISOString()
     const db = getDb()
 
-    // 1. Check balance
-    const balance = getBalance(accountId)
-    if (balance < manifest.estimatedCostCents.max) {
-      throw new Error(
-        `Insufficient credit balance: have ${balance} cents, need ${manifest.estimatedCostCents.max} cents for playbook "${manifest.name}"`,
+    // 1. Apply input defaults from schema (#63)
+    const resolvedInput = applyInputDefaults(input, manifest.inputSchema)
+
+    // 2. Reserve credits (skip for zero-cost playbooks) (#59)
+    let reservationTxn: CreditTransaction | null = null
+
+    if (manifest.estimatedCostCents.max > 0) {
+      const balance = getBalance(accountId)
+      if (balance < manifest.estimatedCostCents.max) {
+        throw new Error(
+          `Insufficient credit balance: have ${balance} cents, need ${manifest.estimatedCostCents.max} cents for playbook "${manifest.name}"`,
+        )
+      }
+      reservationTxn = reserveCredits(
+        accountId,
+        manifest.estimatedCostCents.max,
+        executionId,
       )
     }
-
-    // 2. Reserve credits
-    const reservationTxn = reserveCredits(
-      accountId,
-      manifest.estimatedCostCents.max,
-      executionId,
-    )
 
     // 3. Insert execution record
     db.prepare(`
@@ -75,14 +101,14 @@ export class PlaybookExecutor {
       accountId,
       manifest.id,
       manifest.version,
-      JSON.stringify(input),
+      JSON.stringify(resolvedInput),
       manifest.steps.length,
       startedAt,
       startedAt,
     )
 
     // 4. Build execution context
-    const context: ExecutionContext = { input, steps: {} }
+    const context: ExecutionContext = { input: resolvedInput, steps: {} }
 
     // 5. Execute steps sequentially
     const stepResults: StepResult[] = []
@@ -155,15 +181,19 @@ export class PlaybookExecutor {
         ? 'failed'
         : 'partial'
 
-    // 7. Credit settlement
+    // 7. Credit settlement (#61 — record failures instead of swallowing)
+    let settlementStatus = 'settled'
     try {
-      if (status === 'completed' || status === 'partial') {
-        consumeCredits(reservationTxn.id, totalCostCents)
-      } else {
-        releaseReservation(reservationTxn.id)
+      if (reservationTxn) {
+        if (status === 'completed' || status === 'partial') {
+          consumeCredits(reservationTxn.id, totalCostCents)
+        } else {
+          releaseReservation(reservationTxn.id)
+        }
       }
-    } catch {
-      // Log but don't fail the execution result
+      // Zero-cost playbooks: no reservation, nothing to settle
+    } catch (settlementErr) {
+      settlementStatus = 'failed'
     }
 
     // 8. Build final output
@@ -173,22 +203,28 @@ export class PlaybookExecutor {
     const failedStep = hasFailed
       ? stepResults.find((s) => s.status === 'failed')
       : null
-    const errorMessage = failedStep?.error ?? null
+    let errorMessage: string | null = failedStep?.error ?? null
+
+    if (settlementStatus === 'failed') {
+      const settleMsg = 'credit settlement failed'
+      errorMessage = errorMessage ? `${errorMessage}; ${settleMsg}` : settleMsg
+    }
 
     // 9. Update execution record
     db.prepare(`
       UPDATE playbook_executions
       SET status = ?, output = ?, total_cost_cents = ?, credit_txn_id = ?,
-          steps_completed = ?, error = ?, completed_at = ?
+          steps_completed = ?, error = ?, completed_at = ?, settlement_status = ?
       WHERE id = ?
     `).run(
       status,
       JSON.stringify({ steps: stepResults, output: finalOutput }),
       totalCostCents,
-      reservationTxn.id,
+      reservationTxn?.id ?? null,
       stepResults.filter((s) => s.status === 'completed').length,
       errorMessage,
       completedAt,
+      settlementStatus,
       executionId,
     )
 

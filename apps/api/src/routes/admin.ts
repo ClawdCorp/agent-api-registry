@@ -4,8 +4,6 @@ import { getDb } from '../db/client.js'
 import { encrypt } from '../core/crypto.js'
 import { listPlatformKeys } from '../core/platform-keys.js'
 
-const ADMIN_EMAIL = 'admin@aar.dev'
-
 async function requireAdmin(req: { accountId?: string }, reply: { code: (n: number) => { send: (body: unknown) => unknown } }): Promise<boolean> {
   if (!req.accountId) {
     reply.code(401).send({ error: 'unauthorized', message: 'API key required' })
@@ -14,10 +12,10 @@ async function requireAdmin(req: { accountId?: string }, reply: { code: (n: numb
 
   const db = getDb()
   const account = db.prepare(
-    'SELECT email FROM accounts WHERE id = ?'
-  ).get(req.accountId) as { email: string } | undefined
+    'SELECT role FROM accounts WHERE id = ?'
+  ).get(req.accountId) as { role: string } | undefined
 
-  if (!account || account.email !== ADMIN_EMAIL) {
+  if (!account || account.role !== 'admin') {
     reply.code(403).send({ error: 'forbidden', message: 'admin access required' })
     return false
   }
@@ -47,6 +45,13 @@ export default fp(async function adminRoutes(app) {
     const { encrypted, iv } = encrypt(body.key)
     const id = `ppk_${randomUUID().replace(/-/g, '').slice(0, 16)}`
     const rpmLimit = body.rpmLimit ?? 60
+
+    if (!Number.isInteger(rpmLimit) || rpmLimit < 1) {
+      return reply.code(400).send({
+        error: 'bad_request',
+        message: 'rpmLimit must be a positive integer (>= 1)',
+      })
+    }
 
     const db = getDb()
     db.prepare(

@@ -278,6 +278,22 @@ export function releaseReservation(reservationTxnId: string): CreditTransaction 
       throw new Error(`Transaction ${reservationTxnId} is not a reservation (type: ${reservation.type})`)
     }
 
+    // Idempotency guard: if we already released this reservation, return existing
+    const existingRelease = db.prepare(
+      "SELECT id FROM credit_transactions WHERE type = 'release' AND reference_type = 'reservation' AND reference_id = ?"
+    ).get(reservationTxnId) as { id: string } | undefined
+
+    if (existingRelease) {
+      const existing = db.prepare(
+        `SELECT id, account_id as accountId, type, amount_cents as amountCents,
+                balance_after_cents as balanceAfterCents, reference_type as referenceType,
+                reference_id as referenceId, description, created_at as createdAt
+         FROM credit_transactions WHERE id = ?`
+      ).get(existingRelease.id) as CreditTransaction
+      result = existing
+      return
+    }
+
     const reservedAmount = Math.abs(reservation.amount_cents)
     const currentBalance = getCurrentBalance(db, reservation.account_id)
     const newBalance = currentBalance + reservedAmount
