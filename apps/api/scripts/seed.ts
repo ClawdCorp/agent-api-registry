@@ -11,6 +11,9 @@
 import { randomUUID, randomBytes, createHash } from 'node:crypto'
 import { getDb } from '../src/db/client.js'
 import { encrypt } from '../src/core/crypto.js'
+import { purchaseCredits } from '../src/core/credits.js'
+import { seedPlaybooks } from '../src/playbooks/index.js'
+import { seedAdminAccount } from './seed-admin.js'
 
 const db = getDb()
 
@@ -66,6 +69,67 @@ for (const [provider, envVar] of Object.entries(providerEnvMap)) {
     console.log(`    ${provider}: skipped (set ${envVar} to add)`)
   }
 }
+
+// seed platform provider keys from env
+console.log('\n  Platform Provider Keys:')
+for (const [provider, envVar] of Object.entries(providerEnvMap)) {
+  const key = process.env[envVar]
+  if (key) {
+    const { encrypted, iv } = encrypt(key)
+    const ppkId = `ppk_${randomUUID().replace(/-/g, '').slice(0, 16)}`
+    db.prepare(`
+      INSERT INTO platform_provider_keys (id, provider, encrypted_key, iv, label, rpm_limit)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO NOTHING
+    `).run(ppkId, provider, encrypted, iv, `platform ${envVar}`, 60)
+    console.log(`    ${provider}: added (from ${envVar})`)
+  } else {
+    console.log(`    ${provider}: skipped (set ${envVar} to add)`)
+  }
+}
+
+// create admin account if not exists
+const adminResult = seedAdminAccount(db)
+if (adminResult.created) {
+  console.log(`\n  Admin Account:`)
+  console.log(`    Email    : ${adminResult.email}`)
+  console.log(`    API Key  : ${adminResult.apiKey}`)
+} else {
+  console.log(`\n  Admin Account: already exists (id: ${adminResult.adminId})`)
+}
+
+// seed credits for demo account ($100 = 10000 cents)
+const creditTxn = purchaseCredits(accountId, 10000, {
+  referenceType: 'seed',
+  referenceId: 'seed-script',
+  description: 'Seed credits for demo account',
+})
+console.log(`\n  Credits     : $100.00 (balance: ${creditTxn.balanceAfterCents} cents)`)
+
+// seed playbooks
+console.log('\n  Seed Playbooks:')
+for (const playbook of seedPlaybooks) {
+  db.prepare(`
+    INSERT OR REPLACE INTO playbooks (id, version, name, description, author_id, industry, input_schema, output_schema, steps, estimated_cost_cents_min, estimated_cost_cents_max, providers, price_cents_per_exec, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published')
+  `).run(
+    playbook.id, playbook.version, playbook.name, playbook.description,
+    accountId,
+    JSON.stringify(playbook.industry), JSON.stringify(playbook.inputSchema),
+    JSON.stringify(playbook.outputSchema), JSON.stringify(playbook.steps),
+    playbook.estimatedCostCents.min, playbook.estimatedCostCents.max,
+    JSON.stringify(playbook.providers), 0
+  )
+  console.log(`    ${playbook.id} v${playbook.version}: seeded`)
+
+  // Auto-install for demo account
+  const installId = `pi_${randomUUID().replace(/-/g, '').slice(0, 16)}`
+  db.prepare(`
+    INSERT OR REPLACE INTO playbook_installs (id, account_id, playbook_id, version_pinned)
+    VALUES (?, ?, ?, ?)
+  `).run(installId, accountId, playbook.id, playbook.version)
+}
+console.log('    (all auto-installed for demo account)')
 
 console.log('\n=== Quick Start ===\n')
 console.log(`  # Set your API key`)

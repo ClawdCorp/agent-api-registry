@@ -9,6 +9,7 @@
     "dev:api": "pnpm --filter @aar/api dev",
     "dev:web": "pnpm --filter @aar/web dev",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r run --if-present test"
   }
 }

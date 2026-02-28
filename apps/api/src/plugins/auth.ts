@@ -17,7 +17,7 @@ export default fp(async function authPlugin(app) {
     if (skipPaths.some(p => req.url.startsWith(p))) return
 
     // routes that allow optional auth (enrich but don't block)
-    const optionalAuthPaths = ['/v1/providers']
+    const optionalAuthPaths = ['/v1/providers', '/v1/playbooks', '/v1/executions']
     const isOptional = optionalAuthPaths.some(p => req.url.startsWith(p))
 
     // allow account creation without auth (signup)

@@ -4,6 +4,9 @@ import proxyPlugin from './plugins/proxy.js'
 import providerRoutes from './routes/providers.js'
 import accountRoutes from './routes/account.js'
 import spendRoutes from './routes/spend.js'
+import adminRoutes from './routes/admin.js'
+import creditRoutes from './routes/credits.js'
+import playbookRoutes from './routes/playbooks.js'
 import { getDb } from './db/client.js'
 
 const app = Fastify({ logger: true })
@@ -18,6 +21,9 @@ await app.register(authPlugin)
 await app.register(providerRoutes)
 await app.register(accountRoutes)
 await app.register(spendRoutes)
+await app.register(adminRoutes)
+await app.register(creditRoutes)
+await app.register(playbookRoutes)
 
 // health check (public)
 app.get('/health', async () => ({ ok: true, service: 'aar-api', version: '0.1.0' }))
