@@ -87,22 +87,29 @@ function validateInput(
   input: Record<string, unknown>,
   inputSchema: Record<string, unknown>,
 ): void {
+  const properties = inputSchema.properties as
+    | Record<string, { type?: string }>
+    | undefined
+
   const required = Array.isArray(inputSchema.required)
     ? (inputSchema.required as string[])
     : []
-  const missing = required.filter((key) => input[key] === undefined || input[key] === null)
+  const missing = required.filter((key) => {
+    const val = input[key]
+    if (val === undefined || val === null) return true
+    if (val === '' && properties?.[key]?.type !== 'string') return true
+    return false
+  })
   if (missing.length > 0) {
     throw new InputValidationError(missing)
   }
 
-  const properties = inputSchema.properties as
-    | Record<string, { type?: string }>
-    | undefined
   if (!properties) return
 
   const typeErrors: string[] = []
   for (const [key, prop] of Object.entries(properties)) {
-    if (input[key] === undefined || input[key] === null || input[key] === '') continue
+    if (input[key] === undefined || input[key] === null) continue
+    if (input[key] === '' && prop?.type === 'string') continue
     if (!prop?.type) continue
     const actual = typeof input[key]
     if (prop.type === 'number' && actual !== 'number') {

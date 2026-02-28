@@ -26,6 +26,9 @@ export function getDb(): Database.Database {
       try { db.exec(m) } catch { /* column already exists */ }
     }
 
+    // Normalize legacy invalid rpm_limit values (#74)
+    db.exec(`UPDATE platform_provider_keys SET rpm_limit = 60 WHERE rpm_limit <= 0 OR rpm_limit IS NULL`)
+
     // Bootstrap admin by explicit account ID only (never by email — see #66)
     const adminId = process.env.ADMIN_ACCOUNT_ID
     if (adminId) {

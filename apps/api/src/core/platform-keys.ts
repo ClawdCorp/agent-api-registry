@@ -45,11 +45,21 @@ export function selectPlatformKey(provider: string): { keyId: string; apiKey: st
     )
   }
 
+  // Filter out rows with invalid rpm_limit (legacy bad data)
+  const validRows = rows.filter((row) => row.rpm_limit > 0)
+  if (validRows.length === 0) {
+    throw new PlatformKeyError(
+      `no valid platform keys for provider: ${provider} (${rows.length} key(s) have invalid rpm_limit)`,
+      'no_platform_key',
+      400,
+    )
+  }
+
   // Find the key with lowest utilization (currentRpm / rpmLimit)
   let bestRow: PlatformKeyRow | null = null
   let bestRatio = Infinity
 
-  for (const row of rows) {
+  for (const row of validRows) {
     const counter = getRpmCounter(row.id)
     const ratio = counter.count / row.rpm_limit
     if (ratio < bestRatio) {
@@ -58,9 +68,17 @@ export function selectPlatformKey(provider: string): { keyId: string; apiKey: st
     }
   }
 
+  if (!bestRow) {
+    throw new PlatformKeyError(
+      `no valid platform keys for provider: ${provider}`,
+      'no_platform_key',
+      400,
+    )
+  }
+
   // Check if the best key is at capacity
-  const bestCounter = getRpmCounter(bestRow!.id)
-  if (bestCounter.count >= bestRow!.rpm_limit) {
+  const bestCounter = getRpmCounter(bestRow.id)
+  if (bestCounter.count >= bestRow.rpm_limit) {
     throw new PlatformKeyError(
       `all platform keys for ${provider} are at RPM capacity`,
       'rate_limited',
@@ -71,8 +89,8 @@ export function selectPlatformKey(provider: string): { keyId: string; apiKey: st
   // Pre-increment counter to prevent concurrent over-assignment
   bestCounter.count++
 
-  const apiKey = decrypt(bestRow!.encrypted_key, bestRow!.iv)
-  return { keyId: bestRow!.id, apiKey }
+  const apiKey = decrypt(bestRow.encrypted_key, bestRow.iv)
+  return { keyId: bestRow.id, apiKey }
 }
 
 /**

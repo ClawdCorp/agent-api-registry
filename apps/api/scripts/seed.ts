@@ -102,9 +102,7 @@ if (!existingAdmin) {
   console.log(`    Email    : ${adminEmail}`)
   console.log(`    API Key  : ${adminApiKey}`)
 } else {
-  // Ensure admin role is set on existing admin account
-  db.prepare("UPDATE accounts SET role = 'admin' WHERE email = ? AND role = 'user'").run(adminEmail)
-  console.log(`\n  Admin Account: already exists (ensured admin role)`)
+  console.log(`\n  Admin Account: already exists (id: ${existingAdmin.id})`)
 }
 
 // seed credits for demo account ($100 = 10000 cents)
