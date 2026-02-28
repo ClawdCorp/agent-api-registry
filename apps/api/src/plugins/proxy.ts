@@ -3,6 +3,7 @@ import { getAdapter } from '../adapters/index.js'
 import { getDb } from '../db/client.js'
 import { decrypt } from '../core/crypto.js'
 import { checkBudget } from '../core/budget.js'
+import { checkAccountRpm, releaseAccountRpm } from '../core/account-rpm.js'
 import { ProxyEngine, ProxyEngineError } from '../core/proxy-engine.js'
 
 const proxyEngine = new ProxyEngine()
@@ -57,6 +58,17 @@ export default fp(async function proxyPlugin(app) {
 
     const providerApiKey = decrypt(keyRow.encrypted_key, keyRow.iv)
 
+    // per-account RPM check — placed after all validation so early
+    // failures (missing key, bad provider, etc.) don't consume RPM
+    const rpm = checkAccountRpm(req.accountId)
+    if (!rpm.allowed) {
+      return reply.code(429).send({
+        error: 'rate_limited',
+        message: 'account RPM limit exceeded',
+        rpm: { current: rpm.current, limit: rpm.limit }
+      })
+    }
+
     // delegate to ProxyEngine
     try {
       const result = await proxyEngine.execute(
@@ -71,15 +83,33 @@ export default fp(async function proxyPlugin(app) {
         req.accountId,
       )
 
+      // SSE stream passthrough
+      if (result.stream) {
+        reply.raw.writeHead(result.status, {
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-cache',
+          connection: 'keep-alive',
+        })
+        const reader = result.stream.getReader()
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            reply.raw.write(value)
+          }
+        } catch { /* client disconnect */ }
+        reply.raw.end()
+        return reply
+      }
+
       // map ProxyResponse back to Fastify reply
       reply.status(result.status)
       for (const [key, value] of Object.entries(result.headers)) {
         reply.header(key, value)
       }
-      return reply.send(
-        result.contentType.includes('application/json') ? result.body : result.body
-      )
+      return reply.send(result.body)
     } catch (err) {
+      releaseAccountRpm(req.accountId)
       if (err instanceof ProxyEngineError) {
         return reply.code(err.statusCode).send({
           error: err.code,

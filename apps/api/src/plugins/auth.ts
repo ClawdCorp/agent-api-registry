@@ -13,7 +13,7 @@ export default fp(async function authPlugin(app) {
 
   app.addHook('onRequest', async (req, reply) => {
     // routes that never require auth
-    const skipPaths = ['/health']
+    const skipPaths = ['/health', '/webhooks', '/v1/account/verify', '/v1/account/recover']
     if (skipPaths.some(p => req.url.startsWith(p))) return
 
     // routes that allow optional auth (enrich but don't block)

@@ -20,12 +20,13 @@ export const stripeAdapter: ProviderAdapter = {
   extractUsage(_method, _path, _reqBody, status, resBody): UsageInfo | null {
     if (status >= 400) return null
     const body = resBody as Record<string, unknown>
-    // stripe charges: 2.9% + 30¢ per successful charge
     if (body?.object === 'charge' && body?.amount) {
       const amount = body.amount as number
-      const fee = Math.round(amount * 0.029 + 30)
+      // Stripe fee: 2.9% + 30¢ — computed inline since percentage fees
+      // don't fit the per-unit microdollar pricing model
+      const costCents = Math.round(amount * 0.029) + 30
       return {
-        costCents: fee,
+        costCents,
         units: { amount_cents: amount },
         costDescription: `stripe fee on ${amount}¢ charge`
       }
