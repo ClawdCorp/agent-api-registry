@@ -10,7 +10,8 @@ export default fp(async function spendRoutes(app) {
     }
 
     const query = req.query as { limit?: string }
-    const limit = Math.min(parseInt(query.limit ?? '50', 10), 200)
+    const parsedLimit = parseInt(query.limit ?? '50', 10)
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50
     const events = getRecentSpendEvents(req.accountId, limit)
 
     return { data: events, count: events.length }

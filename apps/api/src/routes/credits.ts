@@ -11,7 +11,10 @@ export default fp(async function creditRoutes(app) {
     }
 
     const body = (req.body ?? {}) as { amount_cents?: number }
-    if (!body.amount_cents || body.amount_cents <= 0) {
+    if (typeof body.amount_cents !== 'number' || !Number.isInteger(body.amount_cents)) {
+      return reply.code(400).send({ error: 'bad_request', message: 'amount_cents must be an integer' })
+    }
+    if (body.amount_cents <= 0) {
       return reply.code(400).send({ error: 'bad_request', message: 'amount_cents must be > 0' })
     }
     if (body.amount_cents > 100000) {
@@ -46,7 +49,8 @@ export default fp(async function creditRoutes(app) {
     }
 
     const query = req.query as { limit?: string }
-    const limit = Math.min(parseInt(query.limit ?? '20', 10), 200)
+    const parsedLimit = parseInt(query.limit ?? '20', 10)
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 20
 
     const balanceCents = getBalance(req.accountId)
     const spentThisMonthCents = getMonthlySpend(req.accountId)

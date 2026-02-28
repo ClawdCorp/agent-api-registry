@@ -258,7 +258,7 @@ export class PlaybookExecutor {
     let settlementStatus = 'settled'
     try {
       if (reservationTxn) {
-        if (status === 'completed' || status === 'partial') {
+        if (totalCostCents > 0) {
           consumeCredits(reservationTxn.id, totalCostCents)
         } else {
           releaseReservation(reservationTxn.id)

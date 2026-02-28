@@ -72,8 +72,8 @@ export function purchaseCredits(
   amountCents: number,
   options?: { referenceType?: string; referenceId?: string; description?: string }
 ): CreditTransaction {
-  if (amountCents <= 0) {
-    throw new Error('Amount must be positive')
+  if (typeof amountCents !== 'number' || !Number.isInteger(amountCents) || amountCents <= 0) {
+    throw new Error('Amount must be a positive integer')
   }
 
   const db = getDb()
@@ -118,8 +118,8 @@ export function reserveCredits(
   amountCents: number,
   executionId: string
 ): CreditTransaction {
-  if (amountCents <= 0) {
-    throw new Error('Amount must be positive')
+  if (typeof amountCents !== 'number' || !Number.isInteger(amountCents) || amountCents <= 0) {
+    throw new Error('Amount must be a positive integer')
   }
 
   const db = getDb()
