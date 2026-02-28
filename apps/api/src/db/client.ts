@@ -43,3 +43,11 @@ export function closeDb(): void {
     db.close()
   }
 }
+
+/** @internal Reset the DB singleton for test isolation. */
+export function resetDb(): void {
+  if (db) {
+    db.close()
+    db = undefined as unknown as Database.Database
+  }
+}

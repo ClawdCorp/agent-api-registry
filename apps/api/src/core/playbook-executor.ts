@@ -40,7 +40,8 @@ interface ExecutionContext {
 
 // ── Input defaults ────────────────────────────────────────────────
 
-function applyInputDefaults(
+/** @internal Exported for testing. */
+export function applyInputDefaults(
   input: Record<string, unknown>,
   inputSchema: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -83,7 +84,8 @@ export class InputValidationError extends Error {
   }
 }
 
-function validateInput(
+/** @internal Exported for testing. */
+export function validateInput(
   input: Record<string, unknown>,
   inputSchema: Record<string, unknown>,
 ): void {
