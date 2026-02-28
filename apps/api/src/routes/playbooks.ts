@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { getDb } from '../db/client.js'
 import { validateManifest } from '../core/playbook-schema.js'
 import type { PlaybookManifest } from '../core/playbook-schema.js'
-import { PlaybookExecutor } from '../core/playbook-executor.js'
+import { PlaybookExecutor, InputValidationError } from '../core/playbook-executor.js'
 
 // ---------------------------------------------------------------------------
 // Types for DB rows
@@ -228,11 +228,17 @@ export default fp(async function playbookRoutes(app) {
 
     const where = conditions.join(' AND ')
 
-    // For each playbook id, pick the latest version (max version)
+    // For each playbook id, pick the latest version (max rowid per id)
     const rows = db.prepare(`
       SELECT p.*,
              COALESCE(ic.cnt, 0) AS install_count
       FROM playbooks p
+      INNER JOIN (
+        SELECT id, MAX(rowid) AS max_rowid
+        FROM playbooks
+        WHERE status = 'published'
+        GROUP BY id
+      ) latest ON p.rowid = latest.max_rowid
       LEFT JOIN (
         SELECT playbook_id, COUNT(*) AS cnt
         FROM playbook_installs
@@ -465,6 +471,13 @@ export default fp(async function playbookRoutes(app) {
       )
       return result
     } catch (err) {
+      if (err instanceof InputValidationError) {
+        return reply.code(400).send({
+          error: 'validation_error',
+          message: err.message,
+          fields: err.fields,
+        })
+      }
       const message = err instanceof Error ? err.message : 'execution failed'
       return reply.code(500).send({ error: 'execution_error', message })
     }

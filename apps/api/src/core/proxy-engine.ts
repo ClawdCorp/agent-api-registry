@@ -2,7 +2,7 @@ import { getAdapter } from '../adapters/index.js'
 import type { UsageInfo } from '../adapters/types.js'
 import { logSpendEvent } from './spend.js'
 import { checkAndAlertThresholds } from './budget.js'
-import { selectPlatformKey, PlatformKeyError } from './platform-keys.js'
+import { selectPlatformKey, releaseKeyUsage, PlatformKeyError } from './platform-keys.js'
 
 // ── Public interfaces ──────────────────────────────────────────────
 
@@ -118,8 +118,20 @@ export class ProxyEngine {
 
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         const rawBody = request.body
-        fetchOptions.body =
-          typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody)
+        if (
+          rawBody != null &&
+          typeof rawBody === 'object' &&
+          outboundHeaders['content-type']?.includes('x-www-form-urlencoded')
+        ) {
+          const params = new URLSearchParams()
+          for (const [k, v] of Object.entries(rawBody as Record<string, unknown>)) {
+            params.append(k, String(v))
+          }
+          fetchOptions.body = params.toString()
+        } else {
+          fetchOptions.body =
+            typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody)
+        }
       }
 
       const providerRes = await fetch(targetUrl, fetchOptions)
@@ -180,6 +192,9 @@ export class ProxyEngine {
         latencyMs,
       }
     } catch (err) {
+      // Release pre-incremented RPM reservation on failure (#70)
+      if (platformKeyId) releaseKeyUsage(platformKeyId)
+
       const latencyMs = Date.now() - startMs
 
       // If it's already a ProxyEngineError, rethrow

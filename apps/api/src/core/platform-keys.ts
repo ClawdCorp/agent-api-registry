@@ -84,6 +84,16 @@ export function recordKeyUsage(keyId: string): void {
 }
 
 /**
+ * Decrement the RPM counter for a key (call on failed outbound calls to release reservation).
+ */
+export function releaseKeyUsage(keyId: string): void {
+  const counter = rpmCounters.get(keyId)
+  if (counter && counter.count > 0) {
+    counter.count--
+  }
+}
+
+/**
  * Get all platform keys for admin view (don't expose the actual keys).
  */
 export function listPlatformKeys(provider?: string): Array<{

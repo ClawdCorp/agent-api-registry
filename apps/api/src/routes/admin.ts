@@ -28,7 +28,7 @@ export default fp(async function adminRoutes(app) {
   app.post('/v1/admin/platform-keys', async (req, reply) => {
     if (!(await requireAdmin(req, reply))) return
 
-    const body = req.body as {
+    const body = (req.body ?? {}) as {
       provider?: string
       key?: string
       label?: string

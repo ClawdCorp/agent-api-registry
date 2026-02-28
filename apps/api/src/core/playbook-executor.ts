@@ -3,6 +3,7 @@ import { getDb } from '../db/client.js'
 import { ProxyEngine } from './proxy-engine.js'
 import type { ProxyResponse } from './proxy-engine.js'
 import { resolveTemplate, extractOutput } from './playbook-schema.js'
+import { getAdapter } from '../adapters/index.js'
 import type { PlaybookManifest, PlaybookStep } from './playbook-schema.js'
 import { reserveCredits, consumeCredits, releaseReservation, getBalance } from './credits.js'
 import type { CreditTransaction } from './credits.js'
@@ -44,17 +45,77 @@ function applyInputDefaults(
   inputSchema: Record<string, unknown>,
 ): Record<string, unknown> {
   const properties = inputSchema.properties as
-    | Record<string, { default?: unknown }>
+    | Record<string, { default?: unknown; type?: string }>
     | undefined
   if (!properties) return input
 
+  const required = new Set(
+    Array.isArray(inputSchema.required) ? (inputSchema.required as string[]) : [],
+  )
+
   const result = { ...input }
   for (const [key, prop] of Object.entries(properties)) {
-    if (result[key] === undefined && prop?.default !== undefined) {
-      result[key] = prop.default
+    if (result[key] === undefined) {
+      if (prop?.default !== undefined) {
+        result[key] = prop.default
+      } else if (!required.has(key)) {
+        // Safe zero-value for optional fields without explicit default (#67)
+        const zeroValues: Record<string, unknown> = {
+          string: '',
+          number: 0,
+          boolean: false,
+        }
+        if (prop?.type && prop.type in zeroValues) {
+          result[key] = zeroValues[prop.type]
+        }
+      }
     }
   }
   return result
+}
+
+export class InputValidationError extends Error {
+  public readonly fields: string[]
+  constructor(fields: string[]) {
+    super(`Missing required input fields: ${fields.join(', ')}`)
+    this.name = 'InputValidationError'
+    this.fields = fields
+  }
+}
+
+function validateInput(
+  input: Record<string, unknown>,
+  inputSchema: Record<string, unknown>,
+): void {
+  const required = Array.isArray(inputSchema.required)
+    ? (inputSchema.required as string[])
+    : []
+  const missing = required.filter((key) => input[key] === undefined || input[key] === null)
+  if (missing.length > 0) {
+    throw new InputValidationError(missing)
+  }
+
+  const properties = inputSchema.properties as
+    | Record<string, { type?: string }>
+    | undefined
+  if (!properties) return
+
+  const typeErrors: string[] = []
+  for (const [key, prop] of Object.entries(properties)) {
+    if (input[key] === undefined || input[key] === null || input[key] === '') continue
+    if (!prop?.type) continue
+    const actual = typeof input[key]
+    if (prop.type === 'number' && actual !== 'number') {
+      typeErrors.push(`${key}: expected number, got ${actual}`)
+    } else if (prop.type === 'string' && actual !== 'string') {
+      typeErrors.push(`${key}: expected string, got ${actual}`)
+    } else if (prop.type === 'boolean' && actual !== 'boolean') {
+      typeErrors.push(`${key}: expected boolean, got ${actual}`)
+    }
+  }
+  if (typeErrors.length > 0) {
+    throw new InputValidationError(typeErrors)
+  }
 }
 
 // ── Executor ───────────────────────────────────────────────────────
@@ -73,6 +134,9 @@ export class PlaybookExecutor {
 
     // 1. Apply input defaults from schema (#63)
     const resolvedInput = applyInputDefaults(input, manifest.inputSchema)
+
+    // 1b. Validate required inputs before execution (#67)
+    validateInput(resolvedInput, manifest.inputSchema)
 
     // 2. Reserve credits (skip for zero-cost playbooks) (#59)
     let reservationTxn: CreditTransaction | null = null
@@ -256,12 +320,14 @@ export class PlaybookExecutor {
       const resolvedBody = resolveTemplate(step.bodyTemplate ?? {}, context)
 
       // Execute via ProxyEngine with platform keys
+      const adapter = getAdapter(step.provider)
+      const contentType = adapter?.contentType ?? 'application/json'
       const response: ProxyResponse = await this.proxyEngine.execute(
         {
           provider: step.provider,
           method: step.method,
           path: step.path,
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': contentType },
           body: resolvedBody,
         },
         { type: 'platform' },

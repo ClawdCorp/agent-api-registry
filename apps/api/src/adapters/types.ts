@@ -27,5 +27,6 @@ export interface ProviderAdapter {
     responseBody: unknown
   ): UsageInfo | null
   validateKeyFormat(key: string): boolean
+  contentType?: string
   blockedPatterns?: RegExp[]
 }

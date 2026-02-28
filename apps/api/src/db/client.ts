@@ -26,8 +26,11 @@ export function getDb(): Database.Database {
       try { db.exec(m) } catch { /* column already exists */ }
     }
 
-    // Backfill admin role for existing admin account
-    db.exec(`UPDATE accounts SET role = 'admin' WHERE email = 'admin@aar.dev' AND role = 'user'`)
+    // Bootstrap admin by explicit account ID only (never by email — see #66)
+    const adminId = process.env.ADMIN_ACCOUNT_ID
+    if (adminId) {
+      db.prepare(`UPDATE accounts SET role = 'admin' WHERE id = ? AND role = 'user'`).run(adminId)
+    }
   }
   return db
 }

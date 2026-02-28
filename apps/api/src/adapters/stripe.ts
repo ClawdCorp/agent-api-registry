@@ -9,6 +9,7 @@ export const stripeAdapter: ProviderAdapter = {
   description: 'Payment processing, subscriptions, invoicing, and financial infrastructure',
   docsUrl: 'https://stripe.com/docs/api',
   authPattern: { type: 'bearer' },
+  contentType: 'application/x-www-form-urlencoded',
 
   buildOutboundHeaders(inbound, apiKey) {
     const headers = filterSafeHeaders(inbound)

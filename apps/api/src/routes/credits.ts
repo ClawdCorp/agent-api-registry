@@ -10,7 +10,7 @@ export default fp(async function creditRoutes(app) {
       return reply.code(401).send({ error: 'unauthorized' })
     }
 
-    const body = req.body as { amount_cents?: number }
+    const body = (req.body ?? {}) as { amount_cents?: number }
     if (!body.amount_cents || body.amount_cents <= 0) {
       return reply.code(400).send({ error: 'bad_request', message: 'amount_cents must be > 0' })
     }
