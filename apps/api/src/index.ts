@@ -7,12 +7,16 @@ import spendRoutes from './routes/spend.js'
 import adminRoutes from './routes/admin.js'
 import creditRoutes from './routes/credits.js'
 import playbookRoutes from './routes/playbooks.js'
+import webhookRoutes from './routes/webhooks.js'
 import { getDb } from './db/client.js'
 
-const app = Fastify({ logger: true })
+const app = Fastify({ logger: true, bodyLimit: 1_048_576 })
 
 // initialize database on startup
 getDb()
+
+// webhooks (registered before auth — signature-verified, not token-authenticated)
+await app.register(webhookRoutes)
 
 // plugins
 await app.register(authPlugin)

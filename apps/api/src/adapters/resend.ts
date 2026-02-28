@@ -1,5 +1,6 @@
 import type { ProviderAdapter, UsageInfo } from './types.js'
 import { filterSafeHeaders } from './utils.js'
+import { calculateCostCents } from '../core/pricing.js'
 
 export const resendAdapter: ProviderAdapter = {
   id: 'resend',
@@ -18,10 +19,10 @@ export const resendAdapter: ProviderAdapter = {
 
   extractUsage(method, path, _reqBody, status, _resBody): UsageInfo | null {
     if (status >= 400) return null
-    // resend pricing: ~$0.28 per 1000 emails on starter plan
     if (method === 'POST' && path.startsWith('/emails')) {
+      const costCents = calculateCostCents('resend', { email_sent: 1 })
       return {
-        costCents: 0, // effectively free at low volume
+        costCents,
         units: { emails_sent: 1 },
         costDescription: '1 email sent'
       }

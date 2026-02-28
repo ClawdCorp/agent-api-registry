@@ -25,6 +25,7 @@ export interface ProxyResponse {
   contentType: string
   usage: UsageInfo | null
   latencyMs: number
+  stream?: ReadableStream<Uint8Array>
 }
 
 // ── Error types ────────────────────────────────────────────────────
@@ -139,6 +140,35 @@ export class ProxyEngine {
 
       // Read response body
       const contentType = providerRes.headers.get('content-type') ?? ''
+
+      // SSE passthrough — don't buffer streaming responses
+      if (contentType.includes('text/event-stream') && providerRes.body) {
+        logSpendEvent({
+          accountId,
+          provider: request.provider,
+          method: request.method,
+          endpoint: `/${request.path}`,
+          costCents: 0,
+          responseStatus: providerRes.status,
+          latencyMs: Date.now() - startMs,
+        })
+
+        const responseHeaders: Record<string, string> = {}
+        for (const [key, value] of providerRes.headers.entries()) {
+          responseHeaders[key] = value
+        }
+
+        return {
+          status: providerRes.status,
+          headers: responseHeaders,
+          body: null,
+          contentType,
+          usage: null,
+          latencyMs: Date.now() - startMs,
+          stream: providerRes.body as ReadableStream<Uint8Array>,
+        }
+      }
+
       let responseBody: unknown
       if (contentType.includes('application/json')) {
         responseBody = await providerRes.json()

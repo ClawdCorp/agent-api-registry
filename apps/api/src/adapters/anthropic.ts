@@ -1,5 +1,6 @@
 import type { ProviderAdapter, UsageInfo } from './types.js'
 import { filterSafeHeaders } from './utils.js'
+import { calculateCostCents } from '../core/pricing.js'
 
 export const anthropicAdapter: ProviderAdapter = {
   id: 'anthropic',
@@ -24,8 +25,10 @@ export const anthropicAdapter: ProviderAdapter = {
     if (usage) {
       const inputTokens = usage.input_tokens ?? 0
       const outputTokens = usage.output_tokens ?? 0
-      // rough claude sonnet pricing: $3/1M input, $15/1M output
-      const costCents = Math.round((inputTokens * 0.0003 + outputTokens * 0.0015) * 100)
+      const costCents = calculateCostCents('anthropic', {
+        input_token: inputTokens,
+        output_token: outputTokens,
+      })
       return {
         costCents,
         units: { input_tokens: inputTokens, output_tokens: outputTokens },

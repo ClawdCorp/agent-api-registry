@@ -22,24 +22,28 @@ export default fp(async function creditRoutes(app) {
     }
 
     const provider = getPaymentProvider()
-    const { sessionId, approved } = await provider.createCheckoutSession(req.accountId, body.amount_cents)
+    const result = await provider.createCheckoutSession(req.accountId, body.amount_cents)
 
-    if (!approved) {
-      return reply.code(402).send({ error: 'payment_failed', message: 'checkout session was not approved' })
+    // Mock provider grants credits synchronously
+    if (result.approved) {
+      const txn = purchaseCredits(req.accountId, body.amount_cents, {
+        referenceType: 'stripe_checkout',
+        referenceId: result.sessionId,
+        description: 'Credit purchase',
+      })
+      return {
+        balance_cents: txn.balanceAfterCents,
+        transaction_id: txn.id,
+        session_id: result.sessionId,
+      }
     }
 
-    const txn = purchaseCredits(req.accountId, body.amount_cents, {
-      referenceType: 'stripe_checkout',
-      referenceId: sessionId,
-      description: 'Credit purchase',
+    // Stripe returns a checkout URL — credits granted via webhook
+    return reply.code(201).send({
+      session_id: result.sessionId,
+      checkout_url: result.checkoutUrl,
+      message: 'Complete payment at checkout_url. Credits will be added automatically.',
     })
-
-    return {
-      balance_cents: txn.balanceAfterCents,
-      transaction_id: txn.id,
-      session_id: sessionId,
-      mock: true,
-    }
   })
 
   // get credit balance, spend, and transaction history

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { getDb } from '../db/client.js'
 import { encrypt } from '../core/crypto.js'
 import { listPlatformKeys } from '../core/platform-keys.js'
+import { getActivePricing } from '../core/pricing.js'
 
 async function requireAdmin(req: { accountId?: string }, reply: { code: (n: number) => { send: (body: unknown) => unknown } }): Promise<boolean> {
   if (!req.accountId) {
@@ -92,5 +93,67 @@ export default fp(async function adminRoutes(app) {
     }
 
     return { ok: true, id }
+  })
+
+  // list active pricing for a provider (or all)
+  app.get('/v1/admin/pricing', async (req, reply) => {
+    if (!(await requireAdmin(req, reply))) return
+
+    const query = req.query as { provider?: string }
+    const db = getDb()
+
+    if (query.provider) {
+      return { data: getActivePricing(query.provider) }
+    }
+
+    const rows = db.prepare(
+      'SELECT provider, operation, unit_cost_microdollars as unitCostMicrodollars FROM provider_pricing WHERE effective_to IS NULL ORDER BY provider, operation'
+    ).all()
+    return { data: rows }
+  })
+
+  // update pricing for a provider+operation
+  app.put('/v1/admin/pricing', async (req, reply) => {
+    if (!(await requireAdmin(req, reply))) return
+
+    const body = (req.body ?? {}) as {
+      provider?: string
+      operation?: string
+      unit_cost_microdollars?: number
+    }
+
+    if (!body.provider || !body.operation || body.unit_cost_microdollars === undefined) {
+      return reply.code(400).send({
+        error: 'bad_request',
+        message: 'provider, operation, and unit_cost_microdollars are required',
+      })
+    }
+
+    if (!Number.isInteger(body.unit_cost_microdollars) || body.unit_cost_microdollars < 0) {
+      return reply.code(400).send({
+        error: 'bad_request',
+        message: 'unit_cost_microdollars must be a non-negative integer',
+      })
+    }
+
+    const db = getDb()
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19)
+
+    // Expire current active rate
+    db.prepare(
+      `UPDATE provider_pricing SET effective_to = ? WHERE provider = ? AND operation = ? AND effective_to IS NULL`
+    ).run(now, body.provider, body.operation)
+
+    // Insert new rate
+    db.prepare(
+      'INSERT INTO provider_pricing (provider, operation, unit_cost_microdollars, effective_from) VALUES (?, ?, ?, ?)'
+    ).run(body.provider, body.operation, body.unit_cost_microdollars, now)
+
+    return {
+      ok: true,
+      provider: body.provider,
+      operation: body.operation,
+      unit_cost_microdollars: body.unit_cost_microdollars,
+    }
   })
 })

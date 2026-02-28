@@ -1,5 +1,6 @@
 import type { ProviderAdapter, UsageInfo } from './types.js'
 import { filterSafeHeaders } from './utils.js'
+import { calculateCostCents } from '../core/pricing.js'
 
 export const stripeAdapter: ProviderAdapter = {
   id: 'stripe',
@@ -20,12 +21,14 @@ export const stripeAdapter: ProviderAdapter = {
   extractUsage(_method, _path, _reqBody, status, resBody): UsageInfo | null {
     if (status >= 400) return null
     const body = resBody as Record<string, unknown>
-    // stripe charges: 2.9% + 30¢ per successful charge
     if (body?.object === 'charge' && body?.amount) {
       const amount = body.amount as number
-      const fee = Math.round(amount * 0.029 + 30)
+      const costCents = calculateCostCents('stripe', {
+        charge_pct_bps: amount,
+        charge_fixed_cents: 1,
+      })
       return {
-        costCents: fee,
+        costCents,
         units: { amount_cents: amount },
         costDescription: `stripe fee on ${amount}¢ charge`
       }

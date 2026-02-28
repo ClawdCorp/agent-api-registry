@@ -1,5 +1,6 @@
 import type { ProviderAdapter, UsageInfo } from './types.js'
 import { filterSafeHeaders } from './utils.js'
+import { calculateCostCents } from '../core/pricing.js'
 
 export const twilioAdapter: ProviderAdapter = {
   id: 'twilio',
@@ -20,12 +21,12 @@ export const twilioAdapter: ProviderAdapter = {
 
   extractUsage(method, path, _reqBody, status, _resBody): UsageInfo | null {
     if (status >= 400) return null
-    // SMS: ~$0.0079/segment outbound US
     if (method === 'POST' && path.includes('/Messages')) {
+      const costCents = calculateCostCents('twilio', { sms_sent: 1 })
       return {
-        costCents: 1, // round up to 1 cent
+        costCents,
         units: { messages_sent: 1 },
-        costDescription: '1 SMS sent (~$0.0079)'
+        costDescription: '1 SMS sent'
       }
     }
     return { costCents: 0, costDescription: 'no direct cost' }

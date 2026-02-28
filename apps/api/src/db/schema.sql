@@ -150,3 +150,14 @@ CREATE TABLE IF NOT EXISTS platform_provider_keys (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_platform_keys_provider ON platform_provider_keys(provider, active);
+
+-- Provider pricing (externalized from adapter hardcodes)
+CREATE TABLE IF NOT EXISTS provider_pricing (
+  provider TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  unit_cost_microdollars INTEGER NOT NULL,
+  effective_from TEXT NOT NULL DEFAULT (datetime('now')),
+  effective_to TEXT,
+  PRIMARY KEY (provider, operation, effective_from)
+);
+CREATE INDEX IF NOT EXISTS idx_pricing_active ON provider_pricing(provider, effective_to);

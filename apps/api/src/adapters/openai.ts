@@ -1,5 +1,6 @@
 import type { ProviderAdapter, UsageInfo } from './types.js'
 import { filterSafeHeaders } from './utils.js'
+import { calculateCostCents } from '../core/pricing.js'
 
 export const openaiAdapter: ProviderAdapter = {
   id: 'openai',
@@ -23,8 +24,10 @@ export const openaiAdapter: ProviderAdapter = {
     if (usage) {
       const promptTokens = usage.prompt_tokens ?? 0
       const completionTokens = usage.completion_tokens ?? 0
-      // rough gpt-4o pricing: $2.50/1M input, $10/1M output
-      const costCents = Math.round((promptTokens * 0.00025 + completionTokens * 0.001) * 100)
+      const costCents = calculateCostCents('openai', {
+        input_token: promptTokens,
+        output_token: completionTokens,
+      })
       return {
         costCents,
         units: { prompt_tokens: promptTokens, completion_tokens: completionTokens },
