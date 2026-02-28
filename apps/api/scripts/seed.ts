@@ -13,6 +13,7 @@ import { getDb } from '../src/db/client.js'
 import { encrypt } from '../src/core/crypto.js'
 import { purchaseCredits } from '../src/core/credits.js'
 import { seedPlaybooks } from '../src/playbooks/index.js'
+import { seedAdminAccount } from './seed-admin.js'
 
 const db = getDb()
 
@@ -88,21 +89,13 @@ for (const [provider, envVar] of Object.entries(providerEnvMap)) {
 }
 
 // create admin account if not exists
-const adminEmail = 'admin@aar.dev'
-const existingAdmin = db.prepare('SELECT id FROM accounts WHERE email = ?').get(adminEmail) as { id: string } | undefined
-if (!existingAdmin) {
-  const adminId = `acct_${randomUUID().replace(/-/g, '').slice(0, 16)}`
-  db.prepare('INSERT INTO accounts (id, email, name, role) VALUES (?, ?, ?, ?)').run(adminId, adminEmail, 'Admin', 'admin')
-  const adminApiKey = `aar_sk_${randomBytes(24).toString('hex')}`
-  const adminKeyHash = createHash('sha256').update(adminApiKey).digest('hex')
-  const adminKeyId = `key_${randomUUID().replace(/-/g, '').slice(0, 16)}`
-  db.prepare('INSERT INTO api_keys (id, account_id, key_hash, key_prefix, name) VALUES (?, ?, ?, ?, ?)')
-    .run(adminKeyId, adminId, adminKeyHash, adminApiKey.slice(0, 14), 'admin-key')
+const adminResult = seedAdminAccount(db)
+if (adminResult.created) {
   console.log(`\n  Admin Account:`)
-  console.log(`    Email    : ${adminEmail}`)
-  console.log(`    API Key  : ${adminApiKey}`)
+  console.log(`    Email    : ${adminResult.email}`)
+  console.log(`    API Key  : ${adminResult.apiKey}`)
 } else {
-  console.log(`\n  Admin Account: already exists (id: ${existingAdmin.id})`)
+  console.log(`\n  Admin Account: already exists (id: ${adminResult.adminId})`)
 }
 
 // seed credits for demo account ($100 = 10000 cents)

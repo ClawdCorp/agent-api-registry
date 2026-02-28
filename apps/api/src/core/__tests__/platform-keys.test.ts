@@ -1,4 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import Database from 'better-sqlite3'
+import { readFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { tmpdir } from 'node:os'
+import { unlinkSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { getDb, resetDb } from '../../db/client.js'
 import { selectPlatformKey, PlatformKeyError } from '../platform-keys.js'
 import { encrypt } from '../crypto.js'
@@ -179,5 +186,52 @@ describe('rpm_limit migration normalization (Bug #74)', () => {
     expect(a.rpm_limit).toBe(60)
     expect(b.rpm_limit).toBe(60)
     expect(c.rpm_limit).toBe(60) // was already valid, stays the same
+  })
+})
+
+// ── Integration: getDb() production migration path (Bug #74) ────────
+
+describe('getDb() production migration normalizes rpm_limit (Bug #74)', () => {
+  const __dirname = dirname(fileURLToPath(import.meta.url))
+  const schemaPath = join(__dirname, '..', '..', 'db', 'schema.sql')
+
+  it('normalizes legacy rpm_limit <= 0 rows via the real getDb() init path', () => {
+    // 1. Create a temp DB file with schema but WITHOUT the normalization migration
+    const tmpPath = join(tmpdir(), `aar-test-${randomUUID()}.db`)
+    const raw = new Database(tmpPath)
+    raw.pragma('journal_mode = WAL')
+    raw.pragma('foreign_keys = ON')
+    raw.exec(readFileSync(schemaPath, 'utf-8'))
+
+    // 2. Insert rows with invalid rpm_limit BEFORE getDb() runs
+    const { encrypted, iv } = encrypt('test-key-legacy')
+    raw.prepare(
+      'INSERT INTO platform_provider_keys (id, provider, encrypted_key, iv, rpm_limit, active) VALUES (?, ?, ?, ?, ?, 1)',
+    ).run('pk_legacy_bad', 'openai', encrypted, iv, 0)
+    raw.prepare(
+      'INSERT INTO platform_provider_keys (id, provider, encrypted_key, iv, rpm_limit, active) VALUES (?, ?, ?, ?, ?, 1)',
+    ).run('pk_legacy_ok', 'openai', encrypted, iv, 120)
+    raw.close()
+
+    // 3. Point getDb() at the temp file — its init path runs the normalization
+    resetDb()
+    process.env.AAR_DB_PATH = tmpPath
+    delete process.env.ADMIN_ACCOUNT_ID
+    const db = getDb()
+
+    // 4. Verify normalization happened through production code
+    const bad = db.prepare('SELECT rpm_limit FROM platform_provider_keys WHERE id = ?').get('pk_legacy_bad') as { rpm_limit: number }
+    const ok = db.prepare('SELECT rpm_limit FROM platform_provider_keys WHERE id = ?').get('pk_legacy_ok') as { rpm_limit: number }
+    expect(bad.rpm_limit).toBe(60)
+    expect(ok.rpm_limit).toBe(120)
+
+    // 5. Verify selectPlatformKey works with the normalized data
+    const result = selectPlatformKey('openai')
+    expect(['pk_legacy_bad', 'pk_legacy_ok']).toContain(result.keyId)
+
+    // Cleanup
+    resetDb()
+    process.env.AAR_DB_PATH = ':memory:'
+    try { unlinkSync(tmpPath) } catch { /* ignore */ }
   })
 })
