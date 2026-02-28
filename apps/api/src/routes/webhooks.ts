@@ -1,8 +1,11 @@
-import fp from 'fastify-plugin'
+import type { FastifyInstance } from 'fastify'
+import Stripe from 'stripe'
 import { getDb } from '../db/client.js'
 import { purchaseCredits } from '../core/credits.js'
 
-export default fp(async function webhookRoutes(app) {
+// NOT wrapped in fastify-plugin — keeps the raw-buffer content type parser
+// scoped to this plugin only, so other routes keep normal JSON parsing.
+export default async function webhookRoutes(app: FastifyInstance) {
   // Stripe needs raw body for signature verification
   app.addContentTypeParser(
     'application/json',
@@ -20,11 +23,10 @@ export default fp(async function webhookRoutes(app) {
       return reply.code(400).send({ error: 'missing stripe-signature or webhook secret' })
     }
 
-    let event: any
+    let event: Stripe.Event
     try {
-      const Stripe = require('stripe')
-      const stripe = new (Stripe.default ?? Stripe)(process.env.STRIPE_SECRET_KEY)
-      event = stripe.webhooks.constructEvent(req.body as Buffer, sig, webhookSecret)
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+      event = stripe.webhooks.constructEvent(req.body as Buffer, sig as string, webhookSecret)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown'
       return reply.code(400).send({ error: `webhook signature verification failed: ${message}` })
@@ -39,21 +41,20 @@ export default fp(async function webhookRoutes(app) {
         return reply.code(400).send({ error: 'missing metadata on checkout session' })
       }
 
-      // Idempotency: check if credits already granted for this session
-      const db = getDb()
-      const existing = db.prepare(
-        'SELECT id FROM credit_transactions WHERE reference_id = ? AND reference_type = ?'
-      ).get(session.id, 'stripe_checkout')
-
-      if (!existing) {
+      // Idempotency: unique index on (reference_type, reference_id) prevents double-credit.
+      // If a concurrent retry already inserted, the UNIQUE constraint violation is caught here.
+      try {
         purchaseCredits(accountId, amountCents, {
           referenceType: 'stripe_checkout',
           referenceId: session.id,
           description: `Stripe checkout ${session.id}`,
         })
+      } catch (err: any) {
+        // UNIQUE constraint violation = already processed, treat as success
+        if (err?.code !== 'SQLITE_CONSTRAINT_UNIQUE') throw err
       }
     }
 
     return { received: true }
   })
-})
+}

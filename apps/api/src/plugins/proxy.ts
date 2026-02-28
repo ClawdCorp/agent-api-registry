@@ -108,6 +108,7 @@ export default fp(async function proxyPlugin(app) {
       }
       return reply.send(result.body)
     } catch (err) {
+      releaseAccountRpm(req.accountId)
       if (err instanceof ProxyEngineError) {
         return reply.code(err.statusCode).send({
           error: err.code,

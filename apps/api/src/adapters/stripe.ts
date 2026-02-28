@@ -1,6 +1,5 @@
 import type { ProviderAdapter, UsageInfo } from './types.js'
 import { filterSafeHeaders } from './utils.js'
-import { calculateCostCents } from '../core/pricing.js'
 
 export const stripeAdapter: ProviderAdapter = {
   id: 'stripe',
@@ -23,10 +22,9 @@ export const stripeAdapter: ProviderAdapter = {
     const body = resBody as Record<string, unknown>
     if (body?.object === 'charge' && body?.amount) {
       const amount = body.amount as number
-      const costCents = calculateCostCents('stripe', {
-        charge_pct_bps: amount,
-        charge_fixed_cents: 1,
-      })
+      // Stripe fee: 2.9% + 30¢ — computed inline since percentage fees
+      // don't fit the per-unit microdollar pricing model
+      const costCents = Math.round(amount * 0.029) + 30
       return {
         costCents,
         units: { amount_cents: amount },

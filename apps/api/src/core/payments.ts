@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import Stripe from 'stripe'
 import { getDb } from '../db/client.js'
 
 export interface CheckoutResult {
@@ -24,14 +25,12 @@ class MockPaymentProvider implements PaymentProvider {
 }
 
 class StripePaymentProvider implements PaymentProvider {
-  private stripe: any // stripe types loaded dynamically
+  private stripe: Stripe
 
   constructor() {
     const key = process.env.STRIPE_SECRET_KEY
     if (!key) throw new Error('STRIPE_SECRET_KEY is required when PAYMENT_PROVIDER=stripe')
-    // stripe package must be installed: pnpm add stripe
-    const Stripe = require('stripe')
-    this.stripe = new (Stripe.default ?? Stripe)(key)
+    this.stripe = new Stripe(key)
   }
 
   async createCheckoutSession(accountId: string, amountCents: number): Promise<CheckoutResult> {

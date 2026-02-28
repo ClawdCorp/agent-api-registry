@@ -28,6 +28,7 @@ export function getDb(): Database.Database {
       `ALTER TABLE accounts ADD COLUMN verification_expires TEXT`,
       `ALTER TABLE accounts ADD COLUMN recovery_token TEXT`,
       `ALTER TABLE accounts ADD COLUMN recovery_expires TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_tx_reference ON credit_transactions(reference_type, reference_id) WHERE reference_type IS NOT NULL AND reference_id IS NOT NULL`,
     ]
     for (const m of migrations) {
       try { db.exec(m) } catch { /* column already exists */ }

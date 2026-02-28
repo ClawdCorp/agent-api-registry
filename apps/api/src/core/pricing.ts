@@ -43,9 +43,7 @@ export function seedDefaultPricing(): void {
   // Anthropic: $3/1M input = 3 micro/token, $15/1M output = 15 micro/token
   insert.run('anthropic', 'input_token', 3)
   insert.run('anthropic', 'output_token', 15)
-  // Stripe: 2.9% + 30¢ — stored as pct-basis-points (29000 = 2.9%) and fixed cents
-  insert.run('stripe', 'charge_pct_bps', 29000)
-  insert.run('stripe', 'charge_fixed_cents', 30)
+  // Stripe fees are percentage-based (2.9% + 30¢) — computed inline in the adapter
   // Resend: $0.28/1000 emails = 280 microdollars/email
   insert.run('resend', 'email_sent', 280)
   // Twilio: $0.0079/SMS = 7900 microdollars/SMS

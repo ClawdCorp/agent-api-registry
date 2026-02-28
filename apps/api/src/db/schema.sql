@@ -78,6 +78,9 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_credit_txn_account ON credit_transactions(account_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_tx_reference
+  ON credit_transactions(reference_type, reference_id)
+  WHERE reference_type IS NOT NULL AND reference_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS stripe_customers (
   account_id TEXT PRIMARY KEY REFERENCES accounts(id),
