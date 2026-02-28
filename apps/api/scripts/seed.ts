@@ -14,13 +14,22 @@ import { encrypt } from '../src/core/crypto.js'
 
 const db = getDb()
 
-// create test account
-const accountId = `acct_${randomUUID().replace(/-/g, '').slice(0, 16)}`
+// create or find existing demo account
 const email = 'demo@aar.dev'
-db.prepare('INSERT OR IGNORE INTO accounts (id, email, name, monthly_budget_cents) VALUES (?, ?, ?, ?)')
-  .run(accountId, email, 'Demo Account', 10000) // $100 budget
+let accountId: string
 
-// create API key
+const existing = db.prepare('SELECT id FROM accounts WHERE email = ?').get(email) as { id: string } | undefined
+if (existing) {
+  accountId = existing.id
+  // reset budget on re-seed
+  db.prepare('UPDATE accounts SET monthly_budget_cents = 10000 WHERE id = ?').run(accountId)
+} else {
+  accountId = `acct_${randomUUID().replace(/-/g, '').slice(0, 16)}`
+  db.prepare('INSERT INTO accounts (id, email, name, monthly_budget_cents) VALUES (?, ?, ?, ?)')
+    .run(accountId, email, 'Demo Account', 10000) // $100 budget
+}
+
+// create a fresh API key (always, so re-running gives a new key)
 const apiKey = `aar_sk_${randomBytes(24).toString('hex')}`
 const keyHash = createHash('sha256').update(apiKey).digest('hex')
 const keyId = `key_${randomUUID().replace(/-/g, '').slice(0, 16)}`
